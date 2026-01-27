@@ -2,7 +2,7 @@ services:
   clawdbot:
     build: .
     container_name: clawdbot
-    restart: unless-stopped
+    restart: on-failure:3
     ulimits:
       nofile:
         soft: 65535
