@@ -4,8 +4,7 @@ FROM node:lts-bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_ROOT_USER_ACTION=ignore
 
-# Install Core & Power Tools
-# Note: Debian "slim" images are minimal. We need to install common tools.
+# Install Core & Power Tools + Docker CLI (client only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
@@ -21,32 +20,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     golang-go \
     gnupg \
-    # Power Tools: ripgrep, fd, fzf, bat
+    docker.io \
     ripgrep fd-find fzf bat \
-    # Document & Office Tools: pandoc, pdf, images
     pandoc \
     poppler-utils \
     ffmpeg \
     imagemagick \
     graphviz \
     sqlite3 \
-    # Security: Pass (GPG)
     pass \
     && rm -rf /var/lib/apt/lists/*
-
-# Install rbw (Bitwarden CLI) - Support both AMD64 and ARM64
-# Temporarily disabled for ARM64 compatibility - building from source is required or valid deb url
-# RUN ARCH=$(dpkg --print-architecture) && \
-#     if [ "$ARCH" = "amd64" ]; then \
-#     URL="https://git.tozt.net/rbw/releases/deb/rbw_1.12.1_amd64.deb"; \
-#     elif [ "$ARCH" = "arm64" ]; then \
-#     URL="https://git.tozt.net/rbw/releases/deb/rbw_1.12.1_arm64.deb"; \
-#     else \
-#     echo "Unsupported architecture: $ARCH" && exit 1; \
-#     fi && \
-#     curl -L --output rbw.deb "$URL" && \
-#     dpkg -i rbw.deb && \
-#     rm rbw.deb
 
 # Install Cloudflare Tunnel (cloudflared)
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -68,84 +51,57 @@ ENV UV_INSTALL_DIR="/usr/local/bin"
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install Bun
-# Note: Bun install script works better with unzip
 RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/* && \
     curl -fsSL https://bun.sh/install | bash
 ENV BUN_INSTALL="/root/.bun"
 ENV PATH="/root/.bun/bin:/root/.bun/install/global/bin:${PATH}"
 
-# Install Vercel & Marp (Slides) & QMD (Search)
-# Node & NPM are already provided by base image
-# QMD requires bun and global install
-RUN bun install -g vercel @marp-team/marp-cli https://github.com/tobi/qmd && \
-    hash -r
+# Install Vercel, Marp, QMD
+RUN bun install -g vercel @marp-team/marp-cli https://github.com/tobi/qmd && hash -r
 
 # Configure QMD Persistence
 ENV XDG_CACHE_HOME="/root/.moltbot/cache"
 
-# Install Python Tools (IPython, Office Libs)
-# Use --break-system-packages because we are in a container/appliance
-RUN pip3 install ipython \
-    csvkit \
-    openpyxl \
-    python-docx \
-    pypdf \
-    --break-system-packages
+# Python tools
+RUN pip3 install ipython csvkit openpyxl python-docx pypdf --break-system-packages
 
-# Add aliases for standard tool names (Debian/Ubuntu quirks)
+# Debian aliases
 RUN ln -s /usr/bin/fdfind /usr/bin/fd || true && \
     ln -s /usr/bin/batcat /usr/bin/bat || true
 
-# Set up working directory
 WORKDIR /app
 
-# Set PATH for global npm binaries - standard location for root typically /usr/local, but we keep node's structure or just use global
-ENV PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/root/.bun/bin:/root/.moltbot/bin:/root/.claude/bin:/root/.kimi/bin:/root/.local/bin"
+# ✅ FINAL PATH (important)
+ENV PATH="/usr/local/bin:/usr/bin:/bin:/root/.local/bin:/root/.npm-global/bin:/root/.bun/bin:/root/.bun/install/global/bin:/root/.claude/bin:/root/.kimi/bin"
 
-# Run Moltbot install scripts as root
+# Moltbot install
 ARG MOLT_BOT_BETA=false
 ENV MOLT_BOT_BETA=${MOLT_BOT_BETA} \
     CLAWDBOT_NO_ONBOARD=1 \
-    # Allow running as root for standard tools
     NPM_CONFIG_UNSAFE_PERM=true
 
-# Install Moltbot (as root, installs to /usr/local/bin or similar usually, need to check install.sh behavior or assume standard)
-# Actually the install script might try to install to ~/.npm-global if not root. As root, it might install to /usr/local/bin. 
-# We'll install to a fixed path or rely on PATH.
 RUN curl -fsSL https://molt.bot/install.sh | bash && \
-    if [ -f "/root/.moltbot/bin/moltbot" ]; then \
-    echo "✅ Found moltbot in default location. Moving to /usr/local/bin to survive volume mounts..." && \
-    mv /root/.moltbot/bin/moltbot /usr/local/bin/moltbot; \
-    elif [ -f "/root/.moltbot/bin/clawdbot" ]; then \
-    echo "✅ Found clawdbot in default location. Moving to /usr/local/bin/moltbot..." && \
-    mv /root/.moltbot/bin/clawdbot /usr/local/bin/moltbot; \
-    elif command -v moltbot >/dev/null 2>&1; then \
-    echo "✅ moltbot binary found in PATH"; \
+    if command -v moltbot >/dev/null 2>&1; then \
+    echo "✅ moltbot binary found"; \
     elif command -v clawdbot >/dev/null 2>&1; then \
-    echo "🔁 clawdbot found in PATH, creating moltbot alias"; \
+    echo "🔁 clawdbot found, creating moltbot alias"; \
     ln -sf "$(command -v clawdbot)" /usr/local/bin/moltbot; \
     else \
     echo "❌ Moltbot install failed (no clawdbot or moltbot found)"; \
     exit 1; \
     fi
 
-# Install AI Tool Suite (globally as root)
+# AI Tool Suite
 RUN bun install -g @openai/codex @google/gemini-cli opencode-ai && \
     curl -fsSL https://claude.ai/install.sh | bash && \
     curl -L https://code.kimi.com/install.sh | bash
 
-# Symlink tools if needed, but installing as root usually puts them in PATH.
-# Just in case:
 RUN ln -sf /root/.claude/bin/claude /usr/local/bin/claude || true && \
     ln -sf /root/.kimi/bin/kimi /usr/local/bin/kimi || true
 
-# Copy local scripts
 COPY scripts/bootstrap.sh /app/scripts/bootstrap.sh
 COPY scripts/molt-approve.sh /usr/local/bin/molt-approve
 RUN chmod +x /app/scripts/bootstrap.sh /usr/local/bin/molt-approve
 
-# Expose the application port
 EXPOSE 18789
-
-# Set entrypoint
 CMD ["bash", "/app/scripts/bootstrap.sh"]
