@@ -45,12 +45,9 @@ seed_agent() {
 
   # ✅ MAIN agent gets ORIGINAL repo SOUL.md and BOOTSTRAP.md
   if [ "$id" = "main" ]; then
-    # Overwrite if missing OR if it's the 'helpful and premium AI assistant' fallback
-    if [ -f "./SOUL.md" ]; then
-      if [ ! -f "$dir/SOUL.md" ] || grep -q "helpful and premium AI assistant" "$dir/SOUL.md"; then
-        echo "✨ Syncing original SOUL.md to $dir..."
-        cp "./SOUL.md" "$dir/SOUL.md"
-      fi
+    if [ -f "./SOUL.md" ] && [ ! -f "$dir/SOUL.md" ]; then
+      echo "✨ Copying original SOUL.md to $dir"
+      cp "./SOUL.md" "$dir/SOUL.md"
     fi
     if [ -f "./BOOTSTRAP.md" ] && [ ! -f "$dir/BOOTSTRAP.md" ]; then
       echo "🚀 Seeding BOOTSTRAP.md to $dir"
