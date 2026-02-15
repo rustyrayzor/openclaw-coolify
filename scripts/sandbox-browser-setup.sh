@@ -6,6 +6,18 @@ export DOCKER_HOST="${DOCKER_HOST:-tcp://docker-proxy:2375}"
 
 echo "🦞 Building OpenClaw Sandbox Browser Image..."
 
+# If Docker CLI is missing or daemon is unreachable, skip image prebuild.
+# This keeps single-container deployments (without socket/proxy) bootable.
+if ! command -v docker >/dev/null 2>&1; then
+    echo "⚠️  Skipping sandbox image prebuild: docker CLI not found."
+    exit 0
+fi
+
+if ! docker version >/dev/null 2>&1; then
+    echo "⚠️  Skipping sandbox image prebuild: Docker API is unreachable at ${DOCKER_HOST}."
+    exit 0
+fi
+
 # Use playwright image for browser capabilities
 BASE_IMAGE="mcr.microsoft.com/playwright:v1.41.0-jammy"
 TARGET_IMAGE="openclaw-sandbox-browser:bookworm-slim"

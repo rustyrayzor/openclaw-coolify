@@ -6,6 +6,18 @@ export DOCKER_HOST="${DOCKER_HOST:-tcp://docker-proxy:2375}"
 
 echo "🦞 Building OpenClaw Sandbox Base Image..."
 
+# If Docker CLI is missing or daemon is unreachable, skip image prebuild.
+# This keeps single-container deployments (without socket/proxy) bootable.
+if ! command -v docker >/dev/null 2>&1; then
+    echo "⚠️  Skipping sandbox image prebuild: docker CLI not found."
+    exit 0
+fi
+
+if ! docker version >/dev/null 2>&1; then
+    echo "⚠️  Skipping sandbox image prebuild: Docker API is unreachable at ${DOCKER_HOST}."
+    exit 0
+fi
+
 # Use python slim as a solid base
 BASE_IMAGE="python:3.11-slim-bookworm"
 TARGET_IMAGE="openclaw-sandbox:bookworm-slim"
